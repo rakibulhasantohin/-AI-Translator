@@ -2,8 +2,17 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { TranslationResult } from "../types";
 
-// Always use process.env.API_KEY directly for initialization
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Lazy initialization of AI client
+let aiInstance: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (!aiInstance) {
+    // Falls back to empty string if process.env.API_KEY is missing to prevent reference error
+    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || "";
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+};
 
 export const translateText = async (
   text: string,
@@ -12,6 +21,7 @@ export const translateText = async (
   sourceLang: string = 'auto',
   sourceCountry: string = ''
 ): Promise<TranslationResult> => {
+  const ai = getAI();
   const prompt = `
     Input JSON:
     {
@@ -69,6 +79,7 @@ export const translateText = async (
 };
 
 export const generateTTS = async (text: string, voiceName: string = 'Kore'): Promise<Uint8Array> => {
+  const ai = getAI();
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text }] }],
