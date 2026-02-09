@@ -1,0 +1,7 @@
+{
+  "name": "আমাদের AI Translator",
+  "description": "A world-class multilingual translation engine with country-based language selection, instant feedback, and high-quality text-to-speech output.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
