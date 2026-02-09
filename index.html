@@ -1,14 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>আমাদের AI Translator</title>
-    <!-- Process Shim to prevent white screen crashes -->
-    <script>
-      window.process = { env: { API_KEY: "" } };
-    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -66,7 +61,6 @@
 </head>
 <body class="bg-slate-50 dark:bg-slate-900 text-gray-800 dark:text-slate-100">
     <div id="root"></div>
-    <!-- Explicit module import for environments that don't auto-inject -->
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>

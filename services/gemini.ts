@@ -1,32 +1,27 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { TranslationResult } from "../types";
 
-// Lazy initialization of AI client
-let aiInstance: GoogleGenAI | null = null;
-
-const getAI = () => {
-  if (!aiInstance) {
-    // Priority: process.env.API_KEY (injected by platform) -> window.process.env -> empty string
-    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || 
-                   (window as any).process?.env?.API_KEY || "";
-    aiInstance = new GoogleGenAI({ apiKey });
-  }
-  return aiInstance;
-};
-
 /**
- * Extracts and parses JSON from a potentially messy string output.
+ * Extracts and parses JSON from Gemini's output.
+ * Handles cases where the model might include markdown code blocks.
  */
 const parseGeminiResponse = (text: string): any => {
+  if (!text) throw new Error("Empty response from AI");
+  
   try {
-    // Try to find a JSON object in the string using regex
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const cleanText = jsonMatch ? jsonMatch[0] : text;
-    return JSON.parse(cleanText);
+    // Try simple parse first
+    return JSON.parse(text);
   } catch (e) {
-    console.error("Failed to parse Gemini response as JSON. Raw output:", text);
-    throw new Error("Invalid response format from AI");
+    try {
+      // If simple parse fails, try to extract from markdown blocks or find the first { and last }
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (innerError) {
+      console.error("Critical JSON Parse Error. Raw text:", text);
+    }
+    throw new Error("Invalid translation response format");
   }
 };
 
@@ -37,15 +32,15 @@ export const translateText = async (
   sourceLang: string = 'auto',
   sourceCountry: string = ''
 ): Promise<TranslationResult> => {
-  const ai = getAI();
+  // Initialize AI directly inside the call to ensure we always have fresh environment variables
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const prompt = `
-    Input parameters:
-    - Text: "${text.replace(/"/g, '\\"')}"
-    - Target Language: ${targetLang}
-    - Target Country: ${targetCountry}
-    - Source Language (optional): ${sourceLang}
+    Input data to translate: "${text.replace(/"/g, '\\"')}"
+    Source settings: Country: ${sourceCountry || 'Unknown'}, Language: ${sourceLang}
+    Target settings: Country: ${targetCountry}, Language: ${targetLang}
     
-    Translate the text and return strictly a JSON object. Do not include markdown formatting or explanations.
+    Translate accurately and return a valid JSON object only.
   `;
 
   try {
@@ -53,13 +48,11 @@ export const translateText = async (
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        systemInstruction: `You are "আমাদের AI Translator", a precision translation engine.
-        Instructions:
-        1. Translate accurately and naturally.
-        2. Always return a single JSON object.
-        3. Never wrap the JSON in markdown code blocks like \`\`\`json.
-        4. Detect source language if set to 'auto'.
-        5. Provide a 'tts' config with voice_language_code suitable for target_language.`,
+        systemInstruction: `You are "আমাদের AI Translator". 
+        Translate the user input naturally based on the target country and language.
+        Detection is required if source_language is 'auto'.
+        Response MUST be a clean JSON object following the schema provided. 
+        NO markdown, NO extra text.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -93,16 +86,15 @@ export const translateText = async (
       }
     });
 
-    const result = parseGeminiResponse(response.text || '{}');
-    return result;
+    return parseGeminiResponse(response.text);
   } catch (error: any) {
-    console.error("Translation API Error:", error);
+    console.error("Translation API Request failed:", error);
     throw error;
   }
 };
 
 export const generateTTS = async (text: string, voiceName: string = 'Kore'): Promise<Uint8Array> => {
-  const ai = getAI();
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -118,11 +110,11 @@ export const generateTTS = async (text: string, voiceName: string = 'Kore'): Pro
     });
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("No audio data received from Gemini TTS");
+    if (!base64Audio) throw new Error("TTS generation failed");
     
     return decode(base64Audio);
   } catch (error) {
-    console.error("TTS API Error:", error);
+    console.error("TTS API Request failed:", error);
     throw error;
   }
 };
