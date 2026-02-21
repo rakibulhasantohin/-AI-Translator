@@ -76,7 +76,7 @@ export default function App() {
 
     debounceTimerRef.current = setTimeout(() => {
       handleTranslate();
-    }, 200);
+    }, 500);
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -88,11 +88,13 @@ export default function App() {
   };
 
   const lastRequestRef = useRef<number>(0);
+  const lastTranslatedTextRef = useRef<string>('');
 
   const handleTranslate = async () => {
-    if (!sourceText.trim()) return;
+    if (!sourceText.trim() || sourceText === lastTranslatedTextRef.current) return;
     const requestId = Date.now();
     lastRequestRef.current = requestId;
+    lastTranslatedTextRef.current = sourceText;
     setLoading(true);
     try {
       const result = await translateText(sourceText, targetLang, targetCountry, sourceLang, sourceCountry);
@@ -119,7 +121,15 @@ export default function App() {
       saveHistory(updatedHistory);
     } catch (error: any) {
       console.error(error);
-      setFeedback(error.message || 'Error translating text.');
+      let userFriendlyMsg = 'ট্রান্সলেশন করতে সমস্যা হয়েছে।';
+      
+      if (error.message?.includes('429') || error.message?.includes('QUOTA_EXCEEDED') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+        userFriendlyMsg = 'আপনার ফ্রি কোটা শেষ হয়ে গেছে। দয়া করে ১ মিনিট অপেক্ষা করে আবার চেষ্টা করুন।';
+      } else if (error.message?.includes('API Key configuration missing')) {
+        userFriendlyMsg = 'API Key সেট করা নেই। দয়া করে সেটিংস চেক করুন।';
+      }
+      
+      setFeedback(userFriendlyMsg);
     } finally {
       setLoading(false);
     }
