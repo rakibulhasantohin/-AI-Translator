@@ -121,15 +121,8 @@ export default function App() {
       saveHistory(updatedHistory);
     } catch (error: any) {
       console.error(error);
-      let userFriendlyMsg = 'ট্রান্সলেশন করতে সমস্যা হয়েছে।';
-      
-      if (error.message?.includes('429') || error.message?.includes('QUOTA_EXCEEDED') || error.message?.includes('RESOURCE_EXHAUSTED')) {
-        userFriendlyMsg = 'আপনার ফ্রি কোটা শেষ হয়ে গেছে। দয়া করে ১ মিনিট অপেক্ষা করে আবার চেষ্টা করুন।';
-      } else if (error.message?.includes('API Key configuration missing')) {
-        userFriendlyMsg = 'API Key সেট করা নেই। দয়া করে সেটিংস চেক করুন।';
-      }
-      
-      setFeedback(userFriendlyMsg);
+      // Don't show technical errors, just a generic one if it really fails after retries
+      setFeedback('ট্রান্সলেশন করা যাচ্ছে না, দয়া করে একটু পর চেষ্টা করুন।');
     } finally {
       setLoading(false);
     }
