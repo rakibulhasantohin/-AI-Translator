@@ -32,23 +32,18 @@ export const translateText = async (
   sourceLang: string = 'auto',
   sourceCountry: string = ''
 ): Promise<TranslationResult> => {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  // Try to get API key from multiple possible sources
+  const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
   
-  if (!apiKey) {
-    console.error("GEMINI_API_KEY is missing. Please set it in your environment variables.");
-    throw new Error("API Key configuration missing");
+  if (!apiKey || apiKey === "undefined") {
+    console.error("GEMINI_API_KEY is missing. Current value:", apiKey);
+    throw new Error("API Key configuration missing. Please check your Vercel/Environment settings.");
   }
 
-  // Initialize AI directly inside the call to ensure we always have fresh environment variables
+  // Initialize AI
   const ai = new GoogleGenAI({ apiKey });
   
-  const prompt = `
-    Input data to translate: "${text.replace(/"/g, '\\"')}"
-    Source settings: Country: ${sourceCountry || 'Unknown'}, Language: ${sourceLang}
-    Target settings: Country: ${targetCountry}, Language: ${targetLang}
-    
-    Translate accurately and return a valid JSON object only.
-  `;
+  const prompt = `Translate "${text.replace(/"/g, '\\"')}" to ${targetLang} (${targetCountry}). Source: ${sourceLang}. JSON only.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -56,11 +51,7 @@ export const translateText = async (
       contents: prompt,
       config: {
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        systemInstruction: `You are "আমাদের AI Translator". 
-        Translate the user input naturally based on the target country and language.
-        Detection is required if source_language is 'auto'.
-        Response MUST be a clean JSON object following the schema provided. 
-        NO markdown, NO extra text.`,
+        systemInstruction: `You are a fast translator. Return JSON: {detected_language, source_language, translation, alternatives:[], notes, tts:{enabled:true, voice_language_code, speak_text}}. No markdown.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -94,16 +85,19 @@ export const translateText = async (
       }
     });
 
+    if (!response.text) throw new Error("No text returned from Gemini");
     return parseGeminiResponse(response.text);
   } catch (error: any) {
     console.error("Translation API Request failed:", error);
-    throw error;
+    // Provide more specific error if possible
+    const errorMsg = error.message || "Unknown API error";
+    throw new Error(`Translation failed: ${errorMsg}`);
   }
 };
 
 export const generateTTS = async (text: string, voiceName: string = 'Kore'): Promise<Uint8Array> => {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key configuration missing");
+  const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (!apiKey || apiKey === "undefined") throw new Error("API Key configuration missing");
   
   const ai = new GoogleGenAI({ apiKey });
   try {

@@ -76,7 +76,7 @@ export default function App() {
 
     debounceTimerRef.current = setTimeout(() => {
       handleTranslate();
-    }, 200);
+    }, 100);
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -117,9 +117,9 @@ export default function App() {
 
       const updatedHistory = [newHistoryItem, ...history].slice(0, 50);
       saveHistory(updatedHistory);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setFeedback('Error translating text.');
+      setFeedback(error.message || 'Error translating text.');
     } finally {
       setLoading(false);
     }
