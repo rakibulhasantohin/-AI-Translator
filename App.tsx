@@ -1,17 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { COUNTRIES, LANGUAGES } from './constants';
 import { translateText, generateTTS, decodeAudioData } from './services/gemini';
-import { supabase } from './services/supabase';
 import { TranslationResult, HistoryItem } from './types';
 
 export default function App() {
-  const [user, setUser] = useState<any>(null);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
-
   const [sourceText, setSourceText] = useState('');
   const [targetText, setTargetText] = useState('');
   const [sourceCountry, setSourceCountry] = useState('');
@@ -37,87 +29,25 @@ export default function App() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const debounceTimerRef = useRef<any>(null);
 
-  // Auth State Listener
+  // Load history from localStorage on mount
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    fetchHistory();
   }, []);
 
-  // Fetch history when user changes
-  useEffect(() => {
-    if (user) {
-      fetchHistory();
-    } else {
-      setHistory([]);
-    }
-  }, [user]);
-
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthLoading(true);
-    setFeedback('');
+  const fetchHistory = () => {
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email: authEmail,
-          password: authPassword,
-        });
-        if (error) throw error;
-        setFeedback('Account created successfully!');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password: authPassword,
-        });
-        if (error) throw error;
-        setFeedback('Logged in successfully!');
-      }
-    } catch (err: any) {
-      setFeedback(err.message);
-    } finally {
-      setAuthLoading(false);
-      setTimeout(() => setFeedback(''), 3000);
-    }
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setSourceText('');
-    setTargetText('');
-  };
-
-  const fetchHistory = async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from('history')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      
-      if (error) throw error;
-      if (data) {
-        const mappedData: HistoryItem[] = data.map(item => ({
-          id: item.id,
-          timestamp: new Date(item.created_at).getTime(),
-          sourceText: item.source_text,
-          translation: item.translation_text,
-          sourceLang: item.source_lang,
-          targetLang: item.target_lang,
-          is_favorite: item.is_favorite
-        }));
-        setHistory(mappedData);
+      const savedHistory = localStorage.getItem('translation_history');
+      if (savedHistory) {
+        setHistory(JSON.parse(savedHistory));
       }
     } catch (err) {
-      console.error('Error fetching from Supabase:', err);
+      console.error('Error fetching history:', err);
     }
+  };
+
+  const saveHistory = (newHistory: HistoryItem[]) => {
+    setHistory(newHistory);
+    localStorage.setItem('translation_history', JSON.stringify(newHistory));
   };
 
   useEffect(() => {
@@ -132,7 +62,7 @@ export default function App() {
 
   // Debounced Translation Effect
   useEffect(() => {
-    if (!sourceText.trim() || !user) {
+    if (!sourceText.trim()) {
       setTargetText('');
       setDetectedLang('');
       setAlternatives([]);
@@ -151,14 +81,14 @@ export default function App() {
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, [sourceText, sourceLang, sourceCountry, targetLang, targetCountry, user]);
+  }, [sourceText, sourceLang, sourceCountry, targetLang, targetCountry]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
   const handleTranslate = async () => {
-    if (!sourceText.trim() || !user) return;
+    if (!sourceText.trim()) return;
     setLoading(true);
     try {
       const result = await translateText(sourceText, targetLang, targetCountry, sourceLang, sourceCountry);
@@ -167,30 +97,18 @@ export default function App() {
       setNotes(result.notes);
       setAlternatives(result.alternatives || []);
       
-      // Save to Supabase with user_id
-      const { data, error } = await supabase
-        .from('history')
-        .insert([{
-          source_text: sourceText,
-          translation_text: result.translation,
-          source_lang: result.detected_language,
-          target_lang: result.target_language,
-          is_favorite: false,
-          user_id: user.id
-        }])
-        .select();
+      const newHistoryItem: HistoryItem = {
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+        sourceText: sourceText,
+        translation: result.translation,
+        sourceLang: result.detected_language,
+        targetLang: result.target_language,
+        is_favorite: false
+      };
 
-      if (!error && data) {
-        setHistory(prev => [{
-          id: data[0].id,
-          timestamp: new Date(data[0].created_at).getTime(),
-          sourceText: sourceText,
-          translation: result.translation,
-          sourceLang: result.detected_language,
-          targetLang: result.target_language,
-          is_favorite: false
-        }, ...prev].slice(0, 50));
-      }
+      const updatedHistory = [newHistoryItem, ...history].slice(0, 50);
+      saveHistory(updatedHistory);
     } catch (error) {
       console.error(error);
       setFeedback('Error translating text.');
@@ -253,109 +171,17 @@ export default function App() {
     setNotes('');
   };
 
-  const toggleFavorite = async (id: string, currentVal: boolean) => {
-    try {
-      const { error } = await supabase
-        .from('history')
-        .update({ is_favorite: !currentVal })
-        .eq('id', id);
-      
-      if (!error) {
-        setHistory(prev => prev.map(item => item.id === id ? { ...item, is_favorite: !currentVal } : item));
-      }
-    } catch (err) {
-      console.error('Error toggling favorite:', err);
-    }
+  const toggleFavorite = (id: string, currentVal: boolean) => {
+    const updatedHistory = history.map(item => item.id === id ? { ...item, is_favorite: !currentVal } : item);
+    saveHistory(updatedHistory);
   };
 
-  const clearAllHistory = async () => {
+  const clearAllHistory = () => {
     if (!confirm('Are you sure you want to clear all history?')) return;
-    try {
-      const { error } = await supabase.from('history').delete().eq('user_id', user.id);
-      if (!error) {
-        setHistory([]);
-        setFeedback('History Cleared');
-        setTimeout(() => setFeedback(''), 2000);
-      }
-    } catch (err) {
-      console.error('Error clearing history:', err);
-    }
+    saveHistory([]);
+    setFeedback('History Cleared');
+    setTimeout(() => setFeedback(''), 2000);
   };
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 transition-colors duration-300">
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800 p-8">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
-              <i className="fa-solid fa-language text-white text-3xl"></i>
-            </div>
-            <h1 className="text-2xl font-black text-gray-900 dark:text-white mb-2 tracking-tight">আমাদের AI Translator</h1>
-            <p className="text-gray-500 dark:text-slate-400 text-sm font-medium">আপনার পার্সোনাল ক্লাউড ট্রান্সলেটর</p>
-          </div>
-
-          <form onSubmit={handleAuth} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Email Address</label>
-              <div className="relative">
-                <i className="fa-solid fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-600"></i>
-                <input 
-                  type="email" 
-                  value={authEmail} 
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-800 border-none rounded-2xl text-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all outline-none" 
-                  placeholder="name@example.com"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Password</label>
-              <div className="relative">
-                <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-600"></i>
-                <input 
-                  type="password" 
-                  value={authPassword} 
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-slate-800 border-none rounded-2xl text-gray-800 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all outline-none" 
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-            </div>
-
-            <button 
-              type="submit" 
-              disabled={authLoading}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-2xl transition-all shadow-lg shadow-blue-500/20 mt-4 active:scale-95"
-            >
-              {authLoading ? <i className="fa-solid fa-circle-notch animate-spin"></i> : (isSignUp ? 'Create Account' : 'Sign In')}
-            </button>
-          </form>
-
-          <div className="mt-8 text-center">
-            <button 
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-            </button>
-          </div>
-
-          <div className="mt-8 pt-8 border-t border-gray-100 dark:border-slate-800 flex items-center justify-center gap-4">
-             <button onClick={toggleTheme} className="p-2 text-gray-400 dark:text-slate-600 hover:text-blue-600">
-                <i className={`fa-solid ${theme === 'light' ? 'fa-moon' : 'fa-sun'}`}></i>
-             </button>
-          </div>
-        </div>
-        {feedback && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full text-sm font-bold animate-bounce shadow-xl">
-            {feedback}
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex flex-col transition-colors duration-300">
@@ -367,7 +193,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-800 dark:text-white">আমাদের AI Translator</h1>
-            <p className="text-[10px] text-gray-400 dark:text-slate-500 font-bold uppercase tracking-widest">{user?.email}</p>
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 font-bold uppercase tracking-widest">Guest Mode</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -378,17 +204,11 @@ export default function App() {
           >
             <i className={`fa-solid ${theme === 'light' ? 'fa-moon' : 'fa-sun text-yellow-400'}`}></i>
           </button>
-          <button 
-            onClick={handleLogout}
-            className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
-            title="Sign Out"
-          >
-            <i className="fa-solid fa-right-from-bracket"></i>
-          </button>
+          
           <div className="h-6 w-px bg-gray-200 dark:bg-slate-700 hidden sm:block"></div>
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-full text-xs font-semibold">
-            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-            Cloud Active
+            <span className="w-2 h-2 rounded-full animate-pulse bg-blue-500"></span>
+            Local Storage Active
           </div>
         </div>
       </header>
@@ -551,7 +371,7 @@ export default function App() {
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col h-[600px] transition-colors">
             <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
               <h3 className="font-bold text-gray-800 dark:text-slate-100 flex items-center gap-2">
-                <i className="fa-solid fa-cloud-arrow-up text-blue-500"></i> Cloud History
+                <i className="fa-solid fa-clock-rotate-left text-blue-500"></i> History
               </h3>
               <button 
                 onClick={clearAllHistory}
@@ -604,7 +424,7 @@ export default function App() {
       {/* Footer */}
       <footer className="py-6 border-t border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-center transition-colors">
         <p className="text-gray-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-[2px]">
-          আমাদের AI Translator • Real-time Cloud-Sync Engine
+          আমাদের AI Translator • Real-time Local Engine
         </p>
       </footer>
     </div>
