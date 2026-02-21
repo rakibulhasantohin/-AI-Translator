@@ -76,7 +76,7 @@ export default function App() {
 
     debounceTimerRef.current = setTimeout(() => {
       handleTranslate();
-    }, 500);
+    }, 200);
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -87,11 +87,19 @@ export default function App() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  const lastRequestRef = useRef<number>(0);
+
   const handleTranslate = async () => {
     if (!sourceText.trim()) return;
+    const requestId = Date.now();
+    lastRequestRef.current = requestId;
     setLoading(true);
     try {
       const result = await translateText(sourceText, targetLang, targetCountry, sourceLang, sourceCountry);
+      
+      // Only update if this is the latest request
+      if (requestId !== lastRequestRef.current) return;
+
       setTargetText(result.translation);
       setDetectedLang(result.detected_language);
       setNotes(result.notes);

@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Type, Modality, ThinkingLevel } from "@google/genai";
 import { TranslationResult } from "../types";
 
 /**
@@ -32,8 +32,15 @@ export const translateText = async (
   sourceLang: string = 'auto',
   sourceCountry: string = ''
 ): Promise<TranslationResult> => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  
+  if (!apiKey) {
+    console.error("GEMINI_API_KEY is missing. Please set it in your environment variables.");
+    throw new Error("API Key configuration missing");
+  }
+
   // Initialize AI directly inside the call to ensure we always have fresh environment variables
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey });
   
   const prompt = `
     Input data to translate: "${text.replace(/"/g, '\\"')}"
@@ -48,6 +55,7 @@ export const translateText = async (
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         systemInstruction: `You are "আমাদের AI Translator". 
         Translate the user input naturally based on the target country and language.
         Detection is required if source_language is 'auto'.
@@ -94,7 +102,10 @@ export const translateText = async (
 };
 
 export const generateTTS = async (text: string, voiceName: string = 'Kore'): Promise<Uint8Array> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key configuration missing");
+  
+  const ai = new GoogleGenAI({ apiKey });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
