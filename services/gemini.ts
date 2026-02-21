@@ -43,15 +43,25 @@ export const translateText = async (
   // Initialize AI
   const ai = new GoogleGenAI({ apiKey });
   
-  const prompt = `Translate "${text.replace(/"/g, '\\"')}" to ${targetLang} (${targetCountry}). Source: ${sourceLang}. JSON only.`;
+  const prompt = `
+    Input data to translate: "${text.replace(/"/g, '\\"')}"
+    Source settings: Country: ${sourceCountry || 'Unknown'}, Language: ${sourceLang}
+    Target settings: Country: ${targetCountry}, Language: ${targetLang}
+    
+    Translate accurately and return a valid JSON object only.
+  `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest', // Using a more stable alias
       contents: prompt,
       config: {
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        systemInstruction: `You are a fast translator. Return JSON: {detected_language, source_language, translation, alternatives:[], notes, tts:{enabled:true, voice_language_code, speak_text}}. No markdown.`,
+        systemInstruction: `You are "আমাদের AI Translator". 
+        Translate the user input naturally based on the target country and language.
+        Detection is required if source_language is 'auto'.
+        Response MUST be a clean JSON object following the schema provided. 
+        NO markdown, NO extra text.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

@@ -76,7 +76,7 @@ export default function App() {
 
     debounceTimerRef.current = setTimeout(() => {
       handleTranslate();
-    }, 100);
+    }, 200);
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
